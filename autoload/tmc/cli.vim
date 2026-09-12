@@ -124,18 +124,27 @@ function! s:_verify_sha256(sha_url, path) abort
     if empty(l:expected)
       return 0
     endif
-    " Compute actual sha256
-    if exists('*sha256')
-      let l:data = join(readfile(a:path, 'b'), '')
-      let l:actual = sha256(l:data)
-    elseif executable('sha256sum')
-      let l:actual = matchstr(system(['sha256sum', a:path]), '\v^[0-9a-f]{64}')
+    " Compute actual sha256.
+    " NOTE: Vim's own sha256() must not be used here. It can only hash a String,
+    " and the only way to load a file into one is readfile(..., 'b'), which splits
+    " on newlines and maps NUL bytes to NL. That is lossy for a binary, so the
+    " digest never matches, every downloaded CLI is discarded as corrupt, and the
+    " plugin falls back to a 'tmc-langs-cli' that is not on $PATH. Shell out to a
+    " real hasher, which reads the file as bytes.
+    let l:actual = ''
+    if executable('sha256sum')
+      let l:actual = matchstr(system('sha256sum ' . shellescape(a:path)), '\v^[0-9a-f]{64}')
     elseif executable('shasum')
-      let l:actual = matchstr(system(['shasum', '-a', '256', a:path]), '\v^[0-9a-f]{64}')
-    else
+      let l:actual = matchstr(system('shasum -a 256 ' . shellescape(a:path)), '\v^[0-9a-f]{64}')
+    elseif executable('certutil')
+      " Windows: output is uppercase and may be space-separated.
+      let l:raw = system('certutil -hashfile ' . shellescape(a:path) . ' SHA256')
+      let l:actual = matchstr(tolower(substitute(l:raw, '\s', '', 'g')), '\v[0-9a-f]{64}')
+    endif
+    if empty(l:actual)
       return 0
     endif
-    return tolower(l:actual) == tolower(l:expected)
+    return tolower(l:actual) ==# tolower(l:expected)
   finally
     if filereadable(l:tmp) | call delete(l:tmp) | endif
   endtry

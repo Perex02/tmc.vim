@@ -86,7 +86,7 @@ function! s:handle_stdout(lines) abort
     if get(obj, 'output-kind', '') ==# 'status-update' && has_key(obj, 'message')
       call add(s:logs, '⏳ ' . obj['message'])
     elseif get(obj, 'output-kind', '') ==# 'output-data' &&
-          \ get(obj, 'data', {})['output-data-kind'] ==# 'test-result'
+          \ get(get(obj, 'data', {}), 'output-data-kind', '') ==# 'test-result'
       let s:last_result = obj
     endif
   endfor

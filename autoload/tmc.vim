@@ -63,6 +63,13 @@ function! tmc#download_course_exercises(course_id, org, cb) abort
   return tmc#download#course_exercises(a:course_id, a:org, a:cb)
 endfunction
 
+" :TmcDownload <courseId> [org] dispatches here; the organisation defaults to
+" g:tmc_organization so the command can be called with the course id alone.
+function! tmc#course_exercises(course_id, ...) abort
+  let l:org = a:0 >= 1 ? a:1 : get(g:, 'tmc_organization', 'mooc')
+  return tmc#download#course_exercises(a:course_id, l:org, {_ -> 0})
+endfunction
+
 " Pick
 function! tmc#pick_course_command() abort
   return tmc#ui#pick_course_command()
