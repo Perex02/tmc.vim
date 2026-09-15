@@ -476,6 +476,27 @@ call Eq(SynAt('✅ test_sum'), 'TmcPass', 'padded pass line still highlights')
 call Eq(SynAt('--- Results ---'), 'TmcHeader', 'padded section header still highlights')
 call Eq(SynAt('Submit (⏎)'), 'TmcButton', 'button still highlights')
 
+" ...but the padding itself must stay unhighlighted. A group with a background
+" (DiffText on the button) otherwise paints the indent too, and the backdrop
+" runs all the way to the window border.
+function! SynPad(pat) abort
+  let l:lines = nvim_buf_get_lines(tmc#panel#bufnr('test'), 0, -1, v:false)
+  for l:i in range(len(l:lines))
+    if l:lines[l:i] =~# a:pat
+      let l:names = []
+      for l:c in range(1, match(l:lines[l:i], '\S'))
+        call add(l:names, synIDattr(synID(l:i + 1, l:c, 1), 'name'))
+      endfor
+      return filter(l:names, '!empty(v:val)')
+    endif
+  endfor
+  return ['NOT FOUND']
+endfunction
+
+call Eq(SynPad('Submit (⏎)'), [], 'BUTTON BACKDROP DOES NOT COVER THE PADDING')
+call Eq(SynPad('✅ test_sum'), [], 'pass highlight does not cover the padding')
+call Eq(SynPad('--- Results ---'), [], 'header highlight does not cover the padding')
+
 " ============================================================
 " which-key: the group label and icon. Child labels come from each mapping's
 " 'desc', which is why plugin/tmc.vim sets them via nvim_set_keymap.
