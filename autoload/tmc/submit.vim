@@ -25,7 +25,7 @@ endfunction
 " ===========================
 " Public: submit an explicit exercise
 "
-" Split out from tmc#submit#current() so the [Submit (s)] action in the test
+" Split out from tmc#submit#current() so the Submit action in the test
 " panel can submit the exercise the run was started from -- the panel buffer
 " itself is not inside the exercise, so re-deriving the root there would fail.
 " ===========================
@@ -73,7 +73,7 @@ function! s:on_line(kind, line) abort
   try
     let l:obj = json_decode(a:line)
   catch
-    call tmc#panel#append(a:kind, 'ℹ️  ' . a:line)
+    call tmc#panel#log(a:kind, 'ℹ️  ' . a:line)
     return
   endtry
 
@@ -82,7 +82,7 @@ function! s:on_line(kind, line) abort
     let l:msg = get(l:obj, 'message', '')
     call tmc#progress#update(a:kind, tmc#progress#percent_of(l:obj), l:msg)
     if !empty(l:msg)
-      call tmc#panel#append(a:kind, '⏳ ' . l:msg)
+      call tmc#panel#log(a:kind, '⏳ ' . l:msg)
     endif
   elseif l:okind ==# 'output-data'
     call tmc#job#set_result(a:kind, l:obj)

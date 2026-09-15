@@ -156,8 +156,9 @@ unlet g:tmc_notify_always
 " ============================================================
 " Panel keymaps and multi-kind isolation
 " ============================================================
-call Ok(!empty(filter(nvim_buf_get_keymap(s:buf, 'n'), 'v:val.lhs ==# "q"')), 'q mapped in panel')
+call Ok(!empty(filter(nvim_buf_get_keymap(s:buf, 'n'), 'v:val.lhs ==# "<Esc>"')), '<Esc> mapped in panel')
 call Ok(!empty(filter(nvim_buf_get_keymap(s:buf, 'n'), 'v:val.lhs ==# "<C-C>"')), '<C-c> mapped in panel')
+call Ok(empty(filter(nvim_buf_get_keymap(s:buf, 'n'), 'v:val.lhs ==# "q"')), 'q NOT mapped (it records macros)')
 
 " a second kind gets its own buffer, so a test run and a submit cannot clash
 call tmc#panel#open('submit', 'Submit')
@@ -166,11 +167,11 @@ call tmc#panel#append('submit', 'submit-only line')
 call Ok(nvim_buf_get_lines(s:buf, 0, -1, v:false)->index('submit-only line') < 0,
       \ 'panels do not share content')
 
-" [Submit (s)] mapping is added on demand and cleared by reset
-call tmc#panel#map('test', 's', ':echo "x"<CR>')
-call Ok(!empty(filter(nvim_buf_get_keymap(s:buf, 'n'), 'v:val.lhs ==# "s"')), 's mapped after offer')
+" Submit mapping is added on demand and cleared by reset
+call tmc#panel#map('test', '<CR>', ':echo "x"<CR>')
+call Ok(!empty(filter(nvim_buf_get_keymap(s:buf, 'n'), 'v:val.lhs ==# "<CR>"')), '<CR> mapped after offer')
 call tmc#panel#reset('test')
-call Ok(empty(filter(nvim_buf_get_keymap(s:buf, 'n'), 'v:val.lhs ==# "s"')), 'reset clears s mapping')
+call Ok(empty(filter(nvim_buf_get_keymap(s:buf, 'n'), 'v:val.lhs ==# "<CR>"')), 'reset clears <CR> mapping')
 
 " ============================================================
 call tmc#panel#hide('test')
@@ -283,6 +284,117 @@ sleep 500m
 call Ok(!tmc#job#is_running('test'), 'cancel stops the job')
 call Ok(join(nvim_buf_get_lines(tmc#panel#bufnr('test'), 0, -1, v:false), "\n") =~# 'Cancelled',
       \ 'cancel noted in panel')
+
+" ============================================================
+" Focus. The panel's keys are buffer-local, so an unfocused panel can never
+" receive them: 'q' and 's' went to the file being edited instead, recording a
+" macro and substituting a character in the source.
+" ============================================================
+" Leave any panel from the sections above, so the :enew below lands in an
+" ordinary window rather than inside a floating panel.
+for s:k in tmc#panel#kinds()
+  call tmc#panel#hide(s:k)
+endfor
+enew
+file spec_userfile.txt
+let s:userwin = win_getid()
+call Ok(tmc#panel#winid('test') == -1, 'no panel window open before the focus test')
+
+call tmc#panel#open('test', 'Focus')
+call Ok(win_getid() == tmc#panel#winid('test'), 'PANEL TAKES FOCUS ON OPEN')
+call Ok(win_getid() != s:userwin, 'focus left the file window')
+
+" the panel keys are now actually reachable from the focused window
+call Ok(!empty(maparg('<Esc>', 'n')), '<Esc> is reachable in the focused panel')
+call Ok(!empty(maparg('<C-c>', 'n')), '<C-c> is reachable in the focused panel')
+
+call tmc#panel#hide('test')
+call Ok(win_getid() == s:userwin, 'FOCUS RETURNS TO THE PREVIOUS WINDOW ON MINIMIZE')
+
+" ============================================================
+" A focused panel must not absorb typing.
+" ============================================================
+call tmc#panel#open('test', 'ReadOnly')
+let s:buf = tmc#panel#bufnr('test')
+call Eq(nvim_get_option_value('modifiable', {'buf': s:buf}), v:false,
+      \ 'panel buffer is nomodifiable')
+
+" ...yet every writer still works, by lifting the flag around the write
+call tmc#panel#reset('test')
+call tmc#panel#append('test', ['a', 'b'])
+call Eq(nvim_buf_line_count(s:buf), 2, 'append() writes despite nomodifiable')
+call tmc#panel#set_head('test', 0, ['head'])
+call Eq(nvim_buf_get_lines(s:buf, 0, 1, v:false)[0], 'head', 'set_head() writes')
+call tmc#progress#start('test', 'claiming')
+call Ok(nvim_buf_line_count(s:buf) >= 3, 'claim_head() writes')
+call tmc#progress#stop('test')
+call Eq(nvim_get_option_value('modifiable', {'buf': s:buf}), v:false,
+      \ 'buffer left nomodifiable after writes')
+
+" ============================================================
+" Tail-follow. Now that the panel is focused, forcing the cursor to the last
+" line on every append would drag a reader away from the failure they scrolled
+" back to look at.
+" ============================================================
+call tmc#panel#reset('test')
+for s:i in range(100)
+  call tmc#panel#append('test', 'line ' . s:i)
+endfor
+let s:win = tmc#panel#winid('test')
+call Eq(nvim_win_get_cursor(s:win)[0], 100, 'cursor tails while at the end')
+
+" scroll back, then append: the cursor must stay put
+call nvim_win_set_cursor(s:win, [40, 0])
+call tmc#panel#append('test', ['more', 'more'])
+call Eq(nvim_win_get_cursor(s:win)[0], 40, 'SCROLLED-BACK CURSOR IS NOT DRAGGED TO THE TAIL')
+
+" return to the end, and following resumes
+call nvim_win_set_cursor(s:win, [nvim_buf_line_count(s:buf), 0])
+call tmc#panel#append('test', ['tail'])
+call Eq(nvim_win_get_cursor(s:win)[0], nvim_buf_line_count(s:buf), 'following resumes at the end')
+
+" ============================================================
+" Quiet body: the bar carries the task, so status chatter and raw CLI output
+" stay out of the results unless g:tmc_panel_verbose is set.
+" ============================================================
+call tmc#panel#reset('test')
+call tmc#progress#start('test', 'start')
+if exists('g:tmc_panel_verbose') | unlet g:tmc_panel_verbose | endif
+
+call tmc#panel#log('test', '⏳ Processing submission')
+call tmc#panel#log('test', 'ℹ️  raw cli noise')
+call tmc#progress#update('test', 0.42, 'Processing submission')
+let s:body = join(nvim_buf_get_lines(s:buf, 0, -1, v:false), "\n")
+call Ok(s:body !~# '⏳', 'no status chatter in the body by default')
+call Ok(s:body !~# 'ℹ️', 'no raw CLI passthrough in the body by default')
+call Ok(s:body =~# 'Processing submission', 'task still shown in the header')
+call Ok(s:body =~# '42%', 'percentage still advancing in the header')
+
+let g:tmc_panel_verbose = 1
+call tmc#panel#log('test', '⏳ Processing submission')
+call tmc#panel#log('test', 'ℹ️  raw cli noise')
+let s:body = join(nvim_buf_get_lines(s:buf, 0, -1, v:false), "\n")
+call Ok(s:body =~# '⏳', 'verbose restores status chatter')
+call Ok(s:body =~# 'ℹ️', 'verbose restores raw CLI passthrough')
+unlet g:tmc_panel_verbose
+call tmc#progress#stop('test')
+
+" ============================================================
+" Minimizing a running job must be silent: completion is reported through
+" vim.notify, and an echo on top of that was redundant noise.
+" ============================================================
+call tmc#panel#open('test', 'Silent')
+call tmc#job#start('test', ['sh', '-c', 'sleep 5'], {
+      \ 'on_line': {k, l -> 0}, 'on_exit': {k, c -> 0}})
+call Ok(tmc#job#is_running('test'), 'job running before minimize')
+
+redir => s:out
+silent call tmc#panel#hide('test')
+redir END
+call Eq(trim(s:out), '', 'MINIMIZING A RUNNING JOB PRINTS NOTHING (got ' . string(trim(s:out)) . ')')
+call Ok(tmc#job#is_running('test'), 'job still running after silent minimize')
+call tmc#job#cancel('test')
+
 
 echo "\n=== " . g:passes . " passed, " . len(g:fails) . " failed ==="
 for s:f in g:fails

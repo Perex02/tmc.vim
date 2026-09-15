@@ -24,6 +24,7 @@ g:tmc_client_version	tmc.txt	/*g:tmc_client_version*
 g:tmc_disable_default_mappings	tmc.txt	/*g:tmc_disable_default_mappings*
 g:tmc_notify_always	tmc.txt	/*g:tmc_notify_always*
 g:tmc_organization	tmc.txt	/*g:tmc_organization*
+g:tmc_panel_verbose	tmc.txt	/*g:tmc_panel_verbose*
 tmc	tmc.txt	/*tmc*
 tmc-api	tmc.txt	/*tmc-api*
 tmc-commands	tmc.txt	/*tmc-commands*

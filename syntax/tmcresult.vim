@@ -43,8 +43,8 @@ highlight def link TmcBarEmpty NonText
 syntax match TmcPercent /\d\{1,3}%$/
 highlight def link TmcPercent Number
 
-" [Submit (s)] action button
-syntax match TmcButton /^\[Submit (s)\]$/
+" Submit action button
+syntax match TmcButton /^\s*Submit (⏎)$/
 highlight def link TmcButton DiffText
 
 " Raw CLI passthrough lines

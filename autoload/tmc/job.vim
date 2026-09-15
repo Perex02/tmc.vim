@@ -6,7 +6,7 @@ scriptencoding utf-8
 " Replaces the per-module s:last_result singletons and g:tmc_*_buf globals, so
 " a backgrounded test run and a submit no longer overwrite each other's state.
 " Each entry also carries the exercise root/id resolved when the job launched,
-" which is what lets the [Submit (s)] action work from inside a panel buffer
+" which is what lets the Submit action work from inside a panel buffer
 " that is not itself part of the exercise.
 
 if exists('g:loaded_tmc_job')

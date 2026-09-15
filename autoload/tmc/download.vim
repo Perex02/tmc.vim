@@ -91,7 +91,7 @@ function! s:on_line(kind, line) abort
     let l:msg = get(l:obj, 'message', '')
     call tmc#progress#update(a:kind, tmc#progress#percent_of(l:obj), l:msg)
     if !empty(l:msg)
-      call tmc#panel#append(a:kind, '⏳ ' . l:msg)
+      call tmc#panel#log(a:kind, '⏳ ' . l:msg)
     endif
   elseif l:okind ==# 'output-data'
     call tmc#job#set_result(a:kind, l:obj)

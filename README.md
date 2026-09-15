@@ -18,7 +18,7 @@ Requires Neovim 0.9+.
 - Results in a floating panel you can minimize with `q` while the run
   continues in the background
 - `vim.notify` when a backgrounded run finishes
-- One-key `[Submit (s)]` straight from a passing local run
+- One-key `Submit (⏎)` straight from a passing local run
 - Progress bar with the current task, driven by the CLI's own progress reports
 - Multiple picker backends (Telescope, `vim.ui.select`, fzf.vim)
 - Automatic CLI binary download with SHA-256 verification
@@ -29,10 +29,11 @@ Requires Neovim 0.9+.
 2. Login to TMC: `:TmcLogin your@email.com`
 3. Select a course: `:TmcPickCourse`
 4. Navigate to an exercise and run tests: `<leader>tt` or `:TmcRunTests`
-5. When they pass, hit `s` in the panel — or `<leader>ts` / `:TmcSubmit`
+5. When they pass, hit `<CR>` on `Submit (⏎)` — or `<leader>ts` / `:TmcSubmit`
 
-While a run is going, `q` minimizes the panel and the job keeps going;
-`<leader>tw` brings it back, and you get a notification when it finishes.
+The panel takes focus when it opens. `<Esc>` minimizes it and hands focus back to
+your file while the job keeps going; `<leader>tw` brings it back, and you get a
+notification when it finishes.
 
 See the [Commands](#commands) section for detailed usage.
 
@@ -99,6 +100,7 @@ See the [Commands](#commands) section for detailed usage.
 | `g:tmc_cli_path` | auto-download | Path to tmc-langs-cli binary. Set to override automatic download. |
 | `g:tmc_cli_version` | `'0.38.1'` | Version to download automatically if binary not found. |
 | `g:tmc_organization` | `'mooc'` | Default organization slug for course listings. |
+| `g:tmc_panel_verbose` | `0` | Stream raw CLI output and progress messages into the panel body as well as the bar. |
 | `g:tmc_notify_always` | `0` | Notify on every finished run, not only those that finished while minimized. |
 | `g:tmc_disable_default_mappings` | `0` | Set to `1` to disable the default `<leader>tt`, `<leader>ts` and `<leader>tw` mappings. |
 
@@ -128,9 +130,9 @@ nmap <F7> <Plug>(tmc-toggle-panel)
 
 | Key | Action |
 |-----|--------|
-| `q` | Minimize the panel; the job keeps running in the background |
+| `<Esc>` | Minimize the panel; the job keeps running in the background, and focus returns to your file |
 | `<C-c>` | Cancel the running job |
-| `s` | Submit to the server — shown as `[Submit (s)]` after a passing local run |
+| `<CR>` | Submit to the server — shown as `Submit (⏎)` after a passing local run |
 
 ## Notes
 

@@ -2,7 +2,7 @@ scriptencoding utf-8
 
 " autoload/tmc/run_tests.vim
 " Runs the local test suite for the current exercise in a floating panel.
-" The job outlives the panel window, so 'q' minimizes without stopping it.
+" The job outlives the panel window, so <Esc> minimizes without stopping it.
 
 if exists('g:loaded_tmc_run_tests')
   finish
@@ -30,7 +30,7 @@ function! tmc#run_tests#current() abort
   endif
 
   " Resolved now, while a real exercise buffer is current: the panel buffer is
-  " not inside the exercise, so [Submit (s)] could not work this out later.
+  " not inside the exercise, so the Submit action could not work this out later.
   let l:id = tmc#project#get_exercise_id(l:root)
 
   call tmc#panel#open(s:KIND, 'Tests · ' . fnamemodify(l:root, ':t'))
@@ -51,7 +51,7 @@ function! s:on_line(kind, line) abort
   try
     let l:obj = json_decode(a:line)
   catch
-    call tmc#panel#append(a:kind, 'ℹ️  ' . a:line)
+    call tmc#panel#log(a:kind, 'ℹ️  ' . a:line)
     return
   endtry
 
@@ -60,7 +60,7 @@ function! s:on_line(kind, line) abort
     let l:msg = get(l:obj, 'message', '')
     call tmc#progress#update(a:kind, tmc#progress#percent_of(l:obj), l:msg)
     if !empty(l:msg)
-      call tmc#panel#append(a:kind, '⏳ ' . l:msg)
+      call tmc#panel#log(a:kind, '⏳ ' . l:msg)
     endif
   elseif l:kind ==# 'output-data'
     call tmc#job#set_result(a:kind, l:obj)
@@ -138,15 +138,16 @@ function! s:output_data(res) abort
 endfunction
 
 " ===========================
-" [Submit (s)] action
+" Submit action, offered only after a passing run
 " ===========================
 function! s:offer_submit(kind) abort
-  call tmc#panel#append(a:kind, ['', '[Submit (s)]'])
-  call tmc#panel#map(a:kind, 's', printf(':call tmc#run_tests#submit_passed(%s)<CR>', string(a:kind)))
-  call tmc#panel#add_hint(a:kind, 's submit')
+  call tmc#panel#append(a:kind, ['', '  Submit (⏎)'])
+  call tmc#panel#map(a:kind, '<CR>',
+        \ printf(':call tmc#run_tests#submit_passed(%s)<CR>', string(a:kind)))
+  call tmc#panel#add_hint(a:kind, 'Enter submit')
 endfunction
 
-" Invoked by 's' in the panel after a passing run.
+" Invoked by <CR> on the Submit line in the panel.
 function! tmc#run_tests#submit_passed(kind) abort
   let l:meta = tmc#job#meta(a:kind)
   let l:root = get(l:meta, 'root', '')

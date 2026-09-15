@@ -134,9 +134,9 @@ Exercise Management ~
       Opens a floating panel with a progress bar and the test results.
       Automatically detects the exercise root by finding .tmcproject.yml
 
-      Press 'q' to minimize the panel; the run continues in the
+      Press <Esc> to minimize the panel; the run continues in the
       background and notifies you when it finishes. When every test
-      passes the panel offers a [Submit (s)] action.
+      passes the panel offers a Submit (⏎) action, bound to <CR>.
 
   :TmcSubmit                                                *:TmcSubmit*
   :TmcSubmitCurrent                                  *:TmcSubmitCurrent*
@@ -197,6 +197,15 @@ g:tmc_organization                                   *g:tmc_organization*
         let g:tmc_organization = 'hy'
 <
 
+g:tmc_panel_verbose                                 *g:tmc_panel_verbose*
+      Stream the CLI's raw output and progress messages into the panel
+      body, in addition to the progress bar.
+      Default: 0
+
+      Off by default: the bar already shows the current task, and a
+      submission repeats its status message often enough to bury the
+      results. Turn it on when debugging the CLI itself.
+
 g:tmc_notify_always                                 *g:tmc_notify_always*
       Notify on every finished run, not just those that finished while
       their panel was minimized.
@@ -229,10 +238,11 @@ In normal mode:
   <leader>ts     → :TmcSubmit         Submit current exercise
   <leader>tw     → :TmcPanel          Show/minimize the last result panel
 
-Inside a result panel:
-  q              Minimize the panel; the job keeps running
+Inside a result panel (the panel takes focus when it opens):
+  <Esc>          Minimize the panel; the job keeps running and focus
+                 returns to the window you came from
   <C-c>          Cancel the running job
-  s              Submit to the server (only after a passing local run)
+  <CR>           Submit to the server (only after a passing local run)
 
 These mappings can be disabled by setting: >
   let g:tmc_disable_default_mappings = 1

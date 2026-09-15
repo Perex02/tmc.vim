@@ -11,6 +11,12 @@ scriptencoding utf-8
 " nvim_win_set_cursor on the windows actually showing the buffer -- never with
 " ':normal! G', which would scroll whatever window happens to be current and
 " yank the cursor out from under the user while a job runs in the background.
+"
+" The panel takes focus when it opens, which is the only way its buffer-local
+" keys can ever fire. Two consequences are handled here: the buffer is kept
+" 'nomodifiable' so a focused panel cannot absorb typing, and s:follow() only
+" tails windows whose cursor was already at the end, so scrolling back through a
+" failure is not undone by the next line of output.
 
 if exists('g:loaded_tmc_panel')
   finish
@@ -21,7 +27,7 @@ let g:loaded_tmc_panel = 1
 let s:panels = {}
 let s:last_kind = ''
 
-let s:BASE_HINT = 'q minimize · <C-c> cancel'
+let s:BASE_HINT = 'Esc minimize · <C-c> cancel'
 
 " ===========================
 " Internals
@@ -35,8 +41,21 @@ function! s:buf_valid(p) abort
   return !empty(a:p) && has_key(a:p, 'bufnr') && a:p.bufnr > 0 && nvim_buf_is_valid(a:p.bufnr)
 endfunction
 
+" A window id alone is not enough: something else may have loaded a different
+" buffer into that window (an :edit while the panel was focused, say), in which
+" case it is no longer our panel and a fresh float should be opened.
 function! s:win_valid(p) abort
-  return !empty(a:p) && has_key(a:p, 'winid') && a:p.winid > 0 && nvim_win_is_valid(a:p.winid)
+  if empty(a:p) || !has_key(a:p, 'winid') || a:p.winid <= 0
+    return 0
+  endif
+  if !nvim_win_is_valid(a:p.winid)
+    return 0
+  endif
+  try
+    return nvim_win_get_buf(a:p.winid) == a:p.bufnr
+  catch
+    return 0
+  endtry
 endfunction
 
 function! s:make_buf(kind) abort
@@ -45,8 +64,10 @@ function! s:make_buf(kind) abort
   call nvim_set_option_value('buftype', 'nofile', {'buf': l:buf})
   call nvim_set_option_value('swapfile', v:false, {'buf': l:buf})
   call nvim_set_option_value('buflisted', v:false, {'buf': l:buf})
-  call nvim_set_option_value('modifiable', v:true, {'buf': l:buf})
   call nvim_set_option_value('syntax', 'tmcresult', {'buf': l:buf})
+  " Focused panel: keep it read-only so stray keystrokes cannot edit it.
+  " Every writer goes through s:writable() to lift this briefly.
+  call nvim_set_option_value('modifiable', v:false, {'buf': l:buf})
   try
     call nvim_buf_set_name(l:buf, 'tmc://' . a:kind)
   catch
@@ -54,7 +75,7 @@ function! s:make_buf(kind) abort
   endtry
 
   let l:opts = {'silent': v:true, 'nowait': v:true, 'noremap': v:true}
-  call nvim_buf_set_keymap(l:buf, 'n', 'q',
+  call nvim_buf_set_keymap(l:buf, 'n', '<Esc>',
         \ printf(':call tmc#panel#hide(%s)<CR>', string(a:kind)), l:opts)
   call nvim_buf_set_keymap(l:buf, 'n', '<C-c>',
         \ printf(':call tmc#job#cancel(%s)<CR>', string(a:kind)), l:opts)
@@ -81,16 +102,44 @@ function! s:win_config(p) abort
         \ }
 endfunction
 
-" Scroll every window showing this buffer to the last line.
-function! s:follow(buf) abort
+" Panel buffers are 'nomodifiable' so a focused panel cannot absorb typing;
+" nvim_buf_set_lines refuses outright on such a buffer (E5555), so every write
+" lifts the flag for the duration of the call and restores it afterwards.
+function! s:set_lines(buf, start, end, lines) abort
+  call nvim_set_option_value('modifiable', v:true, {'buf': a:buf})
+  try
+    call nvim_buf_set_lines(a:buf, a:start, a:end, v:false, a:lines)
+  finally
+    call nvim_set_option_value('modifiable', v:false, {'buf': a:buf})
+  endtry
+endfunction
+
+" Windows showing this buffer whose cursor sits on the last line, i.e. those
+" currently tailing the output. Collected *before* an append so that a reader
+" who has scrolled up is left where they are.
+function! s:tailing_wins(buf) abort
   let l:last = nvim_buf_line_count(a:buf)
+  let l:wins = []
   for l:win in nvim_list_wins()
     try
-      if nvim_win_get_buf(l:win) == a:buf
-        call nvim_win_set_cursor(l:win, [l:last, 0])
+      if nvim_win_get_buf(l:win) == a:buf && nvim_win_get_cursor(l:win)[0] >= l:last
+        call add(l:wins, l:win)
       endif
     catch
-      " Window vanished mid-iteration, or the line is momentarily out of range.
+      " Window vanished mid-iteration.
+    endtry
+  endfor
+  return l:wins
+endfunction
+
+" Move the given windows to the new end of the buffer.
+function! s:follow(buf, wins) abort
+  let l:last = nvim_buf_line_count(a:buf)
+  for l:win in a:wins
+    try
+      call nvim_win_set_cursor(l:win, [l:last, 0])
+    catch
+      " Window vanished, or the line is momentarily out of range.
     endtry
   endfor
 endfunction
@@ -103,7 +152,7 @@ endfunction
 function! tmc#panel#open(kind, title) abort
   let l:p = s:get(a:kind)
   if !s:buf_valid(l:p)
-    let l:p = {'bufnr': s:make_buf(a:kind), 'winid': -1, 'header': 0}
+    let l:p = {'bufnr': s:make_buf(a:kind), 'winid': -1, 'header': 0, 'prev_win': -1}
   endif
   let l:p.title = a:title
   let l:p.hint = get(l:p, 'hint', s:BASE_HINT)
@@ -119,13 +168,13 @@ function! tmc#panel#reset(kind) abort
   if !s:buf_valid(l:p)
     return
   endif
-  call nvim_buf_set_lines(l:p.bufnr, 0, -1, v:false, [])
+  call s:set_lines(l:p.bufnr, 0, -1, [])
   let l:p.header = 0
   let l:p.hint = s:BASE_HINT
   call tmc#panel#refresh_hint(a:kind)
-  " Drop any 's' mapping left over from a previous passing run.
+  " Drop any <CR> submit mapping left over from a previous passing run.
   try
-    call nvim_buf_del_keymap(l:p.bufnr, 'n', 's')
+    call nvim_buf_del_keymap(l:p.bufnr, 'n', '<CR>')
   catch
   endtry
 endfunction
@@ -133,6 +182,11 @@ endfunction
 function! tmc#panel#bufnr(kind) abort
   let l:p = s:get(a:kind)
   return s:buf_valid(l:p) ? l:p.bufnr : -1
+endfunction
+
+function! tmc#panel#winid(kind) abort
+  let l:p = s:get(a:kind)
+  return s:win_valid(l:p) ? l:p.winid : -1
 endfunction
 
 " Number of lines at the top of the buffer owned by the progress header.
@@ -158,15 +212,27 @@ function! tmc#panel#append(kind, lines) abort
     return
   endif
 
+  let l:tailing = s:tailing_wins(l:p.bufnr)
+
   " A fresh scratch buffer already holds one empty line; overwrite it rather
   " than leaving a blank first line above the output.
   let l:count = nvim_buf_line_count(l:p.bufnr)
   if l:count == 1 && empty(nvim_buf_get_lines(l:p.bufnr, 0, 1, v:false)[0])
-    call nvim_buf_set_lines(l:p.bufnr, 0, 1, v:false, l:lines)
+    call s:set_lines(l:p.bufnr, 0, 1, l:lines)
   else
-    call nvim_buf_set_lines(l:p.bufnr, -1, -1, v:false, l:lines)
+    call s:set_lines(l:p.bufnr, -1, -1, l:lines)
   endif
-  call s:follow(l:p.bufnr)
+  call s:follow(l:p.bufnr, l:tailing)
+endfunction
+
+" Streaming CLI chatter: the progress bar already shows the current task, so
+" this is dropped unless g:tmc_panel_verbose is set. Keeping it in the body
+" filled the panel with dozens of near-identical status lines on a submit.
+function! tmc#panel#log(kind, lines) abort
+  if !get(g:, 'tmc_panel_verbose', 0)
+    return
+  endif
+  return tmc#panel#append(a:kind, a:lines)
 endfunction
 
 " Replace the first a:count lines (used by the progress header).
@@ -175,7 +241,7 @@ function! tmc#panel#set_head(kind, count, lines) abort
   if !s:buf_valid(l:p)
     return
   endif
-  call nvim_buf_set_lines(l:p.bufnr, 0, a:count, v:false, a:lines)
+  call s:set_lines(l:p.bufnr, 0, a:count, a:lines)
 endfunction
 
 " Reserve the top of the buffer for a header, so later appends land below it.
@@ -191,7 +257,7 @@ function! tmc#panel#claim_head(kind, lines) abort
         \ && empty(nvim_buf_get_lines(l:p.bufnr, 0, 1, v:false)[0])
     let l:replace = 1
   endif
-  call nvim_buf_set_lines(l:p.bufnr, 0, l:replace, v:false, a:lines)
+  call s:set_lines(l:p.bufnr, 0, l:replace, a:lines)
   let l:p.header = len(a:lines)
 endfunction
 
@@ -199,19 +265,26 @@ function! tmc#panel#is_visible(kind) abort
   return s:win_valid(s:get(a:kind))
 endfunction
 
-" Minimize: close the float, keep the buffer and the job.
+" Minimize: close the float, keep the buffer and the job, and hand focus back
+" to whatever window the panel took it from. Deliberately silent -- completion
+" is reported through tmc#notify#, and echoing here on top of that was noise.
 function! tmc#panel#hide(kind) abort
   let l:p = s:get(a:kind)
   if s:win_valid(l:p)
     call nvim_win_close(l:p.winid, v:false)
   endif
-  if !empty(l:p)
-    let l:p.winid = -1
+  if empty(l:p)
+    return
   endif
-  if tmc#job#is_running(a:kind)
-    call tmc#util#echo_info(printf('TMC %s still running in the background (:TmcPanel %s to reopen)',
-          \ a:kind, a:kind))
+  let l:p.winid = -1
+  let l:prev = get(l:p, 'prev_win', -1)
+  if l:prev > 0 && nvim_win_is_valid(l:prev)
+    try
+      call nvim_set_current_win(l:prev)
+    catch
+    endtry
   endif
+  let l:p.prev_win = -1
 endfunction
 
 function! tmc#panel#show(kind) abort
@@ -224,11 +297,14 @@ function! tmc#panel#show(kind) abort
     call nvim_set_current_win(l:p.winid)
     return
   endif
-  let l:p.winid = nvim_open_win(l:p.bufnr, v:false, s:win_config(l:p))
+  " Remember where focus came from, then take it: the panel's keys are
+  " buffer-local, so an unfocused panel can never receive them.
+  let l:p.prev_win = win_getid()
+  let l:p.winid = nvim_open_win(l:p.bufnr, v:true, s:win_config(l:p))
   call nvim_set_option_value('wrap', v:true, {'win': l:p.winid})
   call nvim_set_option_value('cursorline', v:false, {'win': l:p.winid})
   let s:last_kind = a:kind
-  call s:follow(l:p.bufnr)
+  call s:follow(l:p.bufnr, [l:p.winid])
 endfunction
 
 function! tmc#panel#toggle(kind) abort
@@ -259,7 +335,7 @@ function! tmc#panel#refresh_hint(kind) abort
   endif
 endfunction
 
-" Bind an extra key inside the panel (used for the [Submit (s)] action).
+" Bind an extra key inside the panel (used for the Submit action).
 function! tmc#panel#map(kind, lhs, rhs) abort
   let l:p = s:get(a:kind)
   if !s:buf_valid(l:p)
