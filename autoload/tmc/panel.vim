@@ -29,6 +29,11 @@ let s:last_kind = ''
 
 let s:BASE_HINT = 'Esc minimize · <C-c> cancel'
 
+" Left padding applied to every content line, so the bar, results and action
+" line all sit on one column. Writers emit unpadded text; padding lives here
+" rather than being sprinkled across the four flows that feed a panel.
+let s:PAD = '  '
+
 " ===========================
 " Internals
 " ===========================
@@ -100,6 +105,12 @@ function! s:win_config(p) abort
         \ 'footer': ' ' . a:p.hint . ' ',
         \ 'footer_pos': 'center',
         \ }
+endfunction
+
+" Indent content, leaving blank lines genuinely blank: padding them would leave
+" trailing whitespace on the vertical padding rows.
+function! s:pad(lines) abort
+  return map(copy(a:lines), 'empty(v:val) ? "" : s:PAD . v:val')
 endfunction
 
 " Panel buffers are 'nomodifiable' so a focused panel cannot absorb typing;
@@ -218,10 +229,27 @@ function! tmc#panel#append(kind, lines) abort
   " than leaving a blank first line above the output.
   let l:count = nvim_buf_line_count(l:p.bufnr)
   if l:count == 1 && empty(nvim_buf_get_lines(l:p.bufnr, 0, 1, v:false)[0])
-    call s:set_lines(l:p.bufnr, 0, 1, l:lines)
+    call s:set_lines(l:p.bufnr, 0, 1, s:pad(l:lines))
   else
-    call s:set_lines(l:p.bufnr, -1, -1, l:lines)
+    call s:set_lines(l:p.bufnr, -1, -1, s:pad(l:lines))
   endif
+  call s:follow(l:p.bufnr, l:tailing)
+endfunction
+
+" One blank row above the bottom border, so a finished run does not sit flush
+" against it. Idempotent: called at the end of each flow's exit handler, after
+" any action line has been appended.
+function! tmc#panel#pad_bottom(kind) abort
+  let l:p = s:get(a:kind)
+  if !s:buf_valid(l:p)
+    return
+  endif
+  let l:count = nvim_buf_line_count(l:p.bufnr)
+  if l:count > 0 && empty(nvim_buf_get_lines(l:p.bufnr, -2, -1, v:false)[0])
+    return
+  endif
+  let l:tailing = s:tailing_wins(l:p.bufnr)
+  call s:set_lines(l:p.bufnr, -1, -1, [''])
   call s:follow(l:p.bufnr, l:tailing)
 endfunction
 
@@ -241,7 +269,7 @@ function! tmc#panel#set_head(kind, count, lines) abort
   if !s:buf_valid(l:p)
     return
   endif
-  call s:set_lines(l:p.bufnr, 0, a:count, a:lines)
+  call s:set_lines(l:p.bufnr, 0, a:count, s:pad(a:lines))
 endfunction
 
 " Reserve the top of the buffer for a header, so later appends land below it.
@@ -257,7 +285,7 @@ function! tmc#panel#claim_head(kind, lines) abort
         \ && empty(nvim_buf_get_lines(l:p.bufnr, 0, 1, v:false)[0])
     let l:replace = 1
   endif
-  call s:set_lines(l:p.bufnr, 0, l:replace, a:lines)
+  call s:set_lines(l:p.bufnr, 0, l:replace, s:pad(a:lines))
   let l:p.header = len(a:lines)
 endfunction
 

@@ -6,27 +6,27 @@ if exists("b:current_syntax")
 endif
 
 " ✅ Passed
-syntax match TmcPass /^✅.*$/
+syntax match TmcPass /^\s*✅.*$/
 highlight def link TmcPass DiffAdded
 
 " ❌ Failed
-syntax match TmcFail /^❌.*$/
+syntax match TmcFail /^\s*❌.*$/
 highlight def link TmcFail DiffRemoved
 
 " ⏳ Progress / downloading
-syntax match TmcProgress /^⏳.*$/
+syntax match TmcProgress /^\s*⏳.*$/
 highlight def link TmcProgress WarningMsg
 
 " ⚠️ Skipped
-syntax match TmcSkipped /^⚠️.*$/
+syntax match TmcSkipped /^\s*⚠️.*$/
 highlight def link TmcSkipped Todo
 
 " 💡 Notes
-syntax match TmcNote /^💡.*$/
+syntax match TmcNote /^\s*💡.*$/
 highlight def link TmcNote Comment
 
 " Headers like --- Summary ---
-syntax match TmcHeader /^--- .* ---$/
+syntax match TmcHeader /^\s*--- .* ---$/
 highlight def link TmcHeader Title
 
 " Log labels (Stdout, Stderr)
@@ -48,7 +48,7 @@ syntax match TmcButton /^\s*Submit (⏎)$/
 highlight def link TmcButton DiffText
 
 " Raw CLI passthrough lines
-syntax match TmcInfo /^ℹ.*$/
+syntax match TmcInfo /^\s*ℹ.*$/
 highlight def link TmcInfo Comment
 
 let b:current_syntax = "tmcresult"

@@ -100,6 +100,7 @@ function! s:on_exit(kind, code) abort
     let l:summary = '❌ Submission ended without result'
     call tmc#panel#append(a:kind, ['', l:summary])
     call tmc#progress#finish(a:kind, l:summary)
+    call tmc#panel#pad_bottom(a:kind)
     call tmc#notify#result(a:kind, 0, l:summary)
     return
   endif
@@ -135,6 +136,7 @@ function! s:on_exit(kind, code) abort
   endif
 
   call tmc#progress#finish(a:kind, l:summary)
+  call tmc#panel#pad_bottom(a:kind)
   call tmc#notify#result(a:kind, l:passed, l:summary)
 endfunction
 

@@ -109,6 +109,7 @@ function! s:on_exit(kind, code) abort
     call s:offer_submit(a:kind)
   endif
 
+  call tmc#panel#pad_bottom(a:kind)
   call tmc#notify#result(a:kind, l:passed, l:summary)
 endfunction
 
@@ -141,7 +142,7 @@ endfunction
 " Submit action, offered only after a passing run
 " ===========================
 function! s:offer_submit(kind) abort
-  call tmc#panel#append(a:kind, ['', '  Submit (⏎)'])
+  call tmc#panel#append(a:kind, ['', 'Submit (⏎)'])
   call tmc#panel#map(a:kind, '<CR>',
         \ printf(':call tmc#run_tests#submit_passed(%s)<CR>', string(a:kind)))
   call tmc#panel#add_hint(a:kind, 'Enter submit')

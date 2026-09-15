@@ -197,6 +197,11 @@ g:tmc_organization                                   *g:tmc_organization*
         let g:tmc_organization = 'hy'
 <
 
+g:tmc_disable_which_key                         *g:tmc_disable_which_key*
+      Skip registering the <leader>t group with which-key.nvim when
+      non-zero. The mappings and their descriptions are unaffected.
+      Default: 0
+
 g:tmc_panel_verbose                                 *g:tmc_panel_verbose*
       Stream the CLI's raw output and progress messages into the panel
       body, in addition to the progress bar.
@@ -247,6 +252,24 @@ Inside a result panel (the panel takes focus when it opens):
 These mappings can be disabled by setting: >
   let g:tmc_disable_default_mappings = 1
 <
+                                                          *tmc-which-key*
+Each mapping carries a description, and the <leader>t prefix registers
+itself with which-key.nvim as the group "tmc" with a test-tube icon, so
+the popup shows labelled entries instead of "+3 keymaps":
+>
+  t  󰙨 tmc          →     t  󰙨 Run tests
+                          s  󰙨 Submit exercise
+                          w  󰙨 Toggle TMC panel
+<
+which-key is optional; nothing happens if it is not installed, and the
+plugin never loads it itself. Turn just the group off with
+|g:tmc_disable_which_key|.
+
+Note: some distributions bind <leader>t themselves. LazyVim's Java extra,
+for example, registers a "test" group and a buffer-local <leader>tt for
+its jdtls test runner when mason's java-test is installed, which would
+shadow :TmcRunTests inside Java buffers. Either skip that package or
+remap TMC with the <Plug> targets below.
 
 You can create custom mappings using <Plug> targets: >
   nmap <F5> <Plug>(tmc-run-tests)

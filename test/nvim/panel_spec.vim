@@ -26,6 +26,21 @@ function! Eq(got, want, label) abort
   call Ok(a:got ==# a:want, a:label . ' (got ' . string(a:got) . ' want ' . string(a:want) . ')')
 endfunction
 
+" Panel layout: line 1 is the top padding row, 2 the bar, 3 the current task.
+" Helpers keep the assertions below independent of that offset.
+function! Line(n) abort
+  return get(nvim_buf_get_lines(tmc#panel#bufnr('test'), a:n - 1, a:n, v:false), 0, '')
+endfunction
+function! BarLine() abort
+  return Line(2)
+endfunction
+function! TaskLine() abort
+  return Line(3)
+endfunction
+function! Body() abort
+  return join(nvim_buf_get_lines(tmc#panel#bufnr('test'), 0, -1, v:false), "\n")
+endfunction
+
 " Stub vim.notify so notifications are observable.
 lua << EOF
 _G.tmc_notes = {}
@@ -52,7 +67,7 @@ for i in range(100)
 endfor
 let s:before = nvim_buf_line_count(s:buf)
 call Eq(s:before, 100, 'appended 100 lines')
-call Eq(nvim_buf_get_lines(s:buf, 0, 1, v:false)[0], 'line 0', 'no blank leading line')
+call Eq(Line(1), '  line 0', 'no blank leading line, and padded')
 
 " minimize
 call tmc#panel#hide('test')
@@ -70,7 +85,7 @@ call Eq(nvim_buf_line_count(s:buf), 200, 'output accrued while hidden')
 call tmc#panel#show('test')
 call Ok(tmc#panel#is_visible('test'), 'panel visible after show')
 call Eq(nvim_buf_line_count(s:buf), 200, 'content intact after reopen')
-call Eq(nvim_buf_get_lines(s:buf, -2, -1, v:false)[0], 'bg 99', 'tail correct after reopen')
+call Eq(Line(nvim_buf_line_count(s:buf)), '  bg 99', 'tail correct after reopen')
 
 " toggle round-trip
 call tmc#panel#toggle('test')
@@ -85,33 +100,33 @@ call tmc#panel#reset('test')
 call tmc#progress#start('test', 'Working')
 
 " indeterminate while no percent reported
-let s:l1 = nvim_buf_get_lines(s:buf, 0, 1, v:false)[0]
+call Eq(Line(1), '', 'line 1 is the top padding row')
+let s:l1 = BarLine()
 call Ok(s:l1 =~# '···', 'indeterminate bar when percent unknown')
 call Ok(s:l1 !~# '%', 'indeterminate bar shows no percentage')
 
 " task text lands on line 2
-call Ok(nvim_buf_get_lines(s:buf, 1, 2, v:false)[0] =~# 'Working', 'task text on line 2')
-call Eq(nvim_buf_get_lines(s:buf, 2, 3, v:false)[0], '', 'blank separator on line 3')
+call Ok(TaskLine() =~# 'Working', 'task text on the line under the bar')
 
 for s:pair in [[0.0, 0], [0.33, 33], [0.5, 50], [0.58, 58], [1.0, 100]]
   call tmc#progress#update('test', s:pair[0], 'Step ' . s:pair[1])
-  let s:bar = nvim_buf_get_lines(s:buf, 0, 1, v:false)[0]
+  let s:bar = BarLine()
   call Ok(s:bar =~# printf('%3d%%$', s:pair[1]), printf('bar shows %d%%', s:pair[1]))
-  call Ok(nvim_buf_get_lines(s:buf, 1, 2, v:false)[0] =~# 'Step ' . s:pair[1],
+  call Ok(TaskLine() =~# 'Step ' . s:pair[1],
         \ printf('task text updated at %d%%', s:pair[1]))
 endfor
 
 " bar geometry: 24 cells, filled proportional
 call tmc#progress#update('test', 0.5, 'Half')
-let s:bar = nvim_buf_get_lines(s:buf, 0, 1, v:false)[0]
+let s:bar = BarLine()
 call Eq(strchars(substitute(s:bar, '[^█]', '', 'g')), 12, 'half bar = 12 filled cells')
 call Eq(strchars(substitute(s:bar, '[^░]', '', 'g')), 12, 'half bar = 12 empty cells')
 
 " header stays 3 lines while output is appended below
 call tmc#panel#append('test', ['out A', 'out B'])
 call Eq(nvim_buf_line_count(s:buf), 5, 'header 3 + 2 appended')
-call Ok(nvim_buf_get_lines(s:buf, 0, 1, v:false)[0] =~# '%$', 'header line 1 still the bar')
-call Eq(nvim_buf_get_lines(s:buf, 3, 4, v:false)[0], 'out A', 'output below header')
+call Ok(BarLine() =~# '%$', 'bar line untouched by appends')
+call Eq(Line(4), '  out A', 'output lands below the header, padded')
 
 " percent_of() parsing
 call Eq(tmc#progress#percent_of({'percent-done': 0.42}), 0.42, 'percent_of reads percent-done')
@@ -120,9 +135,8 @@ call Eq(tmc#progress#percent_of({'percent-done': 'x'}), -1.0, 'percent_of -1 on 
 
 " finish freezes at 100%
 call tmc#progress#finish('test', '✅ All 7 tests passed!')
-let s:bar = nvim_buf_get_lines(s:buf, 0, 1, v:false)[0]
-call Ok(s:bar =~# '100%$', 'finish pins bar at 100%')
-call Ok(nvim_buf_get_lines(s:buf, 1, 2, v:false)[0] =~# 'All 7 tests passed', 'summary on task line')
+call Ok(BarLine() =~# '100%$', 'finish pins bar at 100%')
+call Ok(TaskLine() =~# 'All 7 tests passed', 'summary on task line')
 
 " ============================================================
 " 5. Notifications
@@ -263,8 +277,7 @@ call Ok(luaeval('#_G.tmc_notes') == 1, 'notification fired for background comple
 call Ok(luaeval('_G.tmc_notes[1].msg') =~# 'All 5 tests passed', 'notification carries the summary')
 
 " progress bar advanced from real percent-done, then pinned at 100%
-let s:head = nvim_buf_get_lines(s:buf, 0, 1, v:false)[0]
-call Ok(s:head =~# '100%$', 'bar pinned at 100% on completion')
+call Ok(BarLine() =~# '100%$', 'bar pinned at 100% on completion')
 
 " reopening shows everything that accrued
 call tmc#panel#show('test')
@@ -324,7 +337,7 @@ call tmc#panel#reset('test')
 call tmc#panel#append('test', ['a', 'b'])
 call Eq(nvim_buf_line_count(s:buf), 2, 'append() writes despite nomodifiable')
 call tmc#panel#set_head('test', 0, ['head'])
-call Eq(nvim_buf_get_lines(s:buf, 0, 1, v:false)[0], 'head', 'set_head() writes')
+call Eq(Line(1), '  head', 'set_head() writes')
 call tmc#progress#start('test', 'claiming')
 call Ok(nvim_buf_line_count(s:buf) >= 3, 'claim_head() writes')
 call tmc#progress#stop('test')
@@ -394,6 +407,107 @@ redir END
 call Eq(trim(s:out), '', 'MINIMIZING A RUNNING JOB PRINTS NOTHING (got ' . string(trim(s:out)) . ')')
 call Ok(tmc#job#is_running('test'), 'job still running after silent minimize')
 call tmc#job#cancel('test')
+
+
+" ============================================================
+" Padding and alignment. The 2-space indent used to be applied ad hoc by each
+" writer, so results sat at column 0 while the bar and button sat at 2.
+" ============================================================
+call tmc#panel#reset('test')
+call tmc#progress#start('test', 'Compiling')
+call tmc#panel#append('test', ['', '--- Results ---', '✅ test_sum', '✅ test_diff'])
+call tmc#progress#finish('test', '✅ All 2 tests passed!')
+call tmc#panel#append('test', ['', 'Submit (⏎)'])
+call tmc#panel#pad_bottom('test')
+
+let s:lines = nvim_buf_get_lines(s:buf, 0, -1, v:false)
+
+" every non-empty line at exactly column 2
+let s:bad = filter(copy(s:lines), '!empty(v:val) && match(v:val, ''\S'') != 2')
+call Eq(s:bad, [], 'EVERY CONTENT LINE IS AT COLUMN 2')
+
+" ...which means the bar, section header, a result and the button all agree
+call Eq(match(BarLine(), '\S'), 2, 'bar at column 2 (not double-padded)')
+call Ok(!empty(filter(copy(s:lines), 'v:val =~# "^  --- Results ---$"')), 'section header at column 2')
+call Ok(!empty(filter(copy(s:lines), 'v:val =~# "^  ✅ test_sum$"')), 'result line at column 2')
+call Ok(!empty(filter(copy(s:lines), 'v:val =~# "^  Submit (⏎)$"')), 'button at column 2 (not double-padded)')
+
+" vertical padding, top and bottom
+call Eq(s:lines[0], '', 'blank top padding row')
+call Eq(s:lines[-1], '', 'blank bottom padding row')
+
+" blank rows carry no trailing whitespace
+call Eq(filter(copy(s:lines), 'v:val =~# "^\\s\\+$"'), [], 'no whitespace-only lines')
+
+" pad_bottom is idempotent
+let s:n = nvim_buf_line_count(s:buf)
+call tmc#panel#pad_bottom('test')
+call tmc#panel#pad_bottom('test')
+call Eq(nvim_buf_line_count(s:buf), s:n, 'pad_bottom does not stack blanks')
+
+" exactly one blank between the task line and the first body line
+call Eq(Line(4), '', 'single blank separates header from body')
+call Ok(!empty(Line(5)), 'body starts right after that blank')
+
+" nested items keep their extra indent (download sub-items)
+call tmc#panel#append('test', ['  ✅ nested-slug'])
+call Eq(match(Line(nvim_buf_line_count(s:buf)), '\S'), 4, 'nested sub-items sit at column 4')
+
+" ============================================================
+" Syntax must still match once lines are indented: the rules were anchored at
+" '^' and silently stopped highlighting anything.
+" ============================================================
+" synID() reads the *current* buffer, and show() focuses the panel.
+call tmc#panel#show('test')
+syntax enable
+call nvim_set_option_value('syntax', 'tmcresult', {'buf': s:buf})
+
+function! SynAt(pat) abort
+  let l:lines = nvim_buf_get_lines(tmc#panel#bufnr('test'), 0, -1, v:false)
+  for l:i in range(len(l:lines))
+    if l:lines[l:i] =~# a:pat
+      return synIDattr(synID(l:i + 1, match(l:lines[l:i], '\S') + 1, 1), 'name')
+    endif
+  endfor
+  return 'NOT FOUND'
+endfunction
+
+call Eq(SynAt('✅ test_sum'), 'TmcPass', 'padded pass line still highlights')
+call Eq(SynAt('--- Results ---'), 'TmcHeader', 'padded section header still highlights')
+call Eq(SynAt('Submit (⏎)'), 'TmcButton', 'button still highlights')
+
+" ============================================================
+" which-key: the group label and icon. Child labels come from each mapping's
+" 'desc', which is why plugin/tmc.vim sets them via nvim_set_keymap.
+" ============================================================
+for s:lhs in ['<leader>tt', '<leader>ts', '<leader>tw']
+  call Ok(!empty(maparg(s:lhs, 'n', 0, 1)), s:lhs . ' is mapped')
+  call Ok(!empty(get(maparg(s:lhs, 'n', 0, 1), 'desc', '')),
+        \ s:lhs . ' carries a which-key description')
+endfor
+
+lua << EOF
+local captured = nil
+local prev = package.loaded["which-key"]
+package.loaded["which-key"] = { add = function(spec) captured = spec end }
+package.loaded["tmc.whichkey"] = nil
+require("tmc.whichkey").register()
+local e = captured and captured[1]
+vim.g.spec_wk_lhs = e and e[1] or ""
+vim.g.spec_wk_group = e and e.group or ""
+vim.g.spec_wk_icon = (e and e.icon and e.icon.icon) or ""
+package.loaded["which-key"] = prev
+
+-- with no which-key at all, register() must be a silent no-op
+package.loaded["which-key"] = nil
+package.loaded["tmc.whichkey"] = nil
+vim.g.spec_wk_noerr = pcall(function() require("tmc.whichkey").register() end)
+EOF
+
+call Eq(g:spec_wk_lhs, '<leader>t', 'which-key group registered on <leader>t')
+call Eq(g:spec_wk_group, 'tmc', 'group is labelled "tmc", not "+3 keymaps"')
+call Eq(char2nr(g:spec_wk_icon), 0xF0668, 'group icon is the test tube (U+F0668)')
+call Ok(g:spec_wk_noerr, 'register() is a no-op without which-key')
 
 
 echo "\n=== " . g:passes . " passed, " . len(g:fails) . " failed ==="

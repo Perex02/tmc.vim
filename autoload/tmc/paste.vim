@@ -104,5 +104,6 @@ function! s:on_exit(kind, code) abort
   endif
 
   call tmc#progress#finish(a:kind, empty(l:url) ? '❌ Paste failed' : '✅ Paste created')
+  call tmc#panel#pad_bottom(a:kind)
   call tmc#notify#result(a:kind, !empty(l:url), l:summary)
 endfunction

@@ -3,12 +3,17 @@ scriptencoding utf-8
 " autoload/tmc/progress.vim
 " Progress bar for a panel, replacing the old single-line spinner.
 "
-" Owns the first three lines of the panel buffer -- bar, current task, blank
-" separator -- so tmc#panel#append() can keep writing below without any offset
-" bookkeeping:
+" Owns the first three lines of the panel buffer -- a blank padding row, the
+" bar, and the current task -- so tmc#panel#append() can keep writing below
+" without any offset bookkeeping:
+"
 "
 "    ████████████░░░░░░░░  58%
-"  ⠹ Running test suite…
+"    ⠹ Running test suite…
+"
+" The blank that separates the header from the body comes from the body side:
+" each flow's first appended block leads with one. Owning it here too produced a
+" double blank.
 "
 " The CLI reports 'percent-done' on its status updates, but not for every
 " operation. When it is missing we animate an indeterminate sweep instead of
@@ -34,7 +39,7 @@ let s:state = {}
 function! s:bar_determinate(percent) abort
   let l:pct = a:percent < 0.0 ? 0.0 : (a:percent > 1.0 ? 1.0 : a:percent)
   let l:filled = float2nr(round(l:pct * s:WIDTH))
-  return printf('  %s%s  %3d%%',
+  return printf('%s%s  %3d%%',
         \ repeat('█', l:filled), repeat('░', s:WIDTH - l:filled),
         \ float2nr(round(l:pct * 100)))
 endfunction
@@ -46,7 +51,7 @@ function! s:bar_indeterminate(frame) abort
   for l:i in range(s:WIDTH)
     let l:bar .= (l:i < l:pos && l:i >= l:pos - s:SWEEP) ? '█' : '░'
   endfor
-  return '  ' . l:bar . '   ···'
+  return l:bar . '   ···'
 endfunction
 
 function! s:render(kind) abort
@@ -57,15 +62,16 @@ function! s:render(kind) abort
 
   if l:st.done
     let l:head = s:bar_determinate(1.0)
-    let l:task = '  ' . l:st.message
+    let l:task = l:st.message
   else
     let l:head = l:st.percent >= 0.0
           \ ? s:bar_determinate(l:st.percent)
           \ : s:bar_indeterminate(l:st.frame)
-    let l:task = '  ' . s:FRAMES[l:st.frame % len(s:FRAMES)] . ' ' . l:st.message
+    let l:task = s:FRAMES[l:st.frame % len(s:FRAMES)] . ' ' . l:st.message
   endif
 
-  call tmc#panel#set_head(a:kind, s:HEADER, [l:head, l:task, ''])
+  " Leading '' is the panel's top padding row.
+  call tmc#panel#set_head(a:kind, s:HEADER, ['', l:head, l:task])
 endfunction
 
 " ===========================

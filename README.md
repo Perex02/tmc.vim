@@ -100,6 +100,7 @@ See the [Commands](#commands) section for detailed usage.
 | `g:tmc_cli_path` | auto-download | Path to tmc-langs-cli binary. Set to override automatic download. |
 | `g:tmc_cli_version` | `'0.38.1'` | Version to download automatically if binary not found. |
 | `g:tmc_organization` | `'mooc'` | Default organization slug for course listings. |
+| `g:tmc_disable_which_key` | `0` | Skip registering the `<leader>t` which-key group (mappings and their descriptions are unaffected). |
 | `g:tmc_panel_verbose` | `0` | Stream raw CLI output and progress messages into the panel body as well as the bar. |
 | `g:tmc_notify_always` | `0` | Notify on every finished run, not only those that finished while minimized. |
 | `g:tmc_disable_default_mappings` | `0` | Set to `1` to disable the default `<leader>tt`, `<leader>ts` and `<leader>tw` mappings. |
@@ -125,6 +126,26 @@ nmap <F5> <Plug>(tmc-run-tests)
 nmap <F6> <Plug>(tmc-submit-current)
 nmap <F7> <Plug>(tmc-toggle-panel)
 ```
+
+### which-key
+
+The default mappings carry descriptions, and the `<leader>t` prefix registers as the
+group **tmc** with a test-tube icon, so the popup reads:
+
+```
+ t  󰙨 tmc     →    t  󰙨 Run tests
+                   s  󰙨 Submit exercise
+                   w  󰙨 Toggle TMC panel
+```
+
+which-key is entirely optional — the plugin never loads it itself, and does nothing
+if it is absent. Disable just the group with `g:tmc_disable_which_key = 1`.
+
+> **Heads up:** some distributions claim `<leader>t`. LazyVim's Java extra registers
+> its own `test` group and a buffer-local `<leader>tt` for the jdtls test runner when
+> mason's `java-test` is installed — which would shadow `:TmcRunTests` in exactly the
+> Java buffers a MOOC Java course lives in. Remap with the `<Plug>` targets if you
+> hit that.
 
 ### Panel keys
 
@@ -192,8 +213,11 @@ For information on contributing, code structure, and development setup, see [CON
 ### Project Structure
 
 ```
+lua/tmc/
+└── whichkey.lua      - which-key group registration (optional)
+
 autoload/tmc/
-├── panel.vim         - Floating result panels (minimize / restore)
+├── panel.vim         - Floating result panels (padding, minimize / restore)
 ├── progress.vim      - Progress bar + current task header
 ├── job.vim           - Background CLI job registry
 ├── notify.vim        - vim.notify reporting

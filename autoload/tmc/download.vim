@@ -106,6 +106,7 @@ function! s:on_exit(kind, code) abort
   let l:summary = s:print_summary(a:kind)
 
   call tmc#progress#finish(a:kind, l:summary)
+  call tmc#panel#pad_bottom(a:kind)
   call tmc#notify#result(a:kind, l:summary =~# '^✅', l:summary)
 
   " Hand control back to the picker flow (cd into the course, list exercises).

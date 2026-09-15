@@ -66,9 +66,26 @@ nnoremap <silent> <Plug>(tmc-submit-current)   :TmcSubmit<CR>
 nnoremap <silent> <Plug>(tmc-toggle-panel)     :TmcPanel<CR>
 
 " Default leader mappings (can be disabled)
+"
+" Set through nvim_set_keymap rather than :nmap so each one carries a 'desc'.
+" which-key renders those as the entry labels; without them <leader>t shows up
+" as a bare "+3 keymaps". 'noremap' must stay false for the <Plug> targets to
+" resolve.
 if !get(g:, 'tmc_disable_default_mappings', 0)
-  nmap <silent> <leader>tt <Plug>(tmc-run-tests)
-  nmap <silent> <leader>ts <Plug>(tmc-submit-current)
-  nmap <silent> <leader>tw <Plug>(tmc-toggle-panel)
+  let s:tmc_maps = [
+        \ ['<leader>tt', '<Plug>(tmc-run-tests)',      'Run tests'],
+        \ ['<leader>ts', '<Plug>(tmc-submit-current)', 'Submit exercise'],
+        \ ['<leader>tw', '<Plug>(tmc-toggle-panel)',   'Toggle TMC panel'],
+        \ ]
+  for s:m in s:tmc_maps
+    call nvim_set_keymap('n', s:m[0], s:m[1],
+          \ {'desc': s:m[2], 'silent': v:true, 'noremap': v:false})
+  endfor
+  unlet s:tmc_maps s:m
+
+  " Name the <leader>t group in which-key, if it is in use. pcall'd so that
+  " sourcing this file without the plugin's lua/ on 'runtimepath' degrades to
+  " an unnamed group rather than an error at startup.
+  lua pcall(function() require('tmc.whichkey').register() end)
 endif
 
