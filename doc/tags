@@ -6,6 +6,7 @@
 :TmcListExercises	tmc.txt	/*:TmcListExercises*
 :TmcLogin	tmc.txt	/*:TmcLogin*
 :TmcLogout	tmc.txt	/*:TmcLogout*
+:TmcPanel	tmc.txt	/*:TmcPanel*
 :TmcPaste	tmc.txt	/*:TmcPaste*
 :TmcPickCourse	tmc.txt	/*:TmcPickCourse*
 :TmcPickOrg	tmc.txt	/*:TmcPickOrg*
@@ -21,6 +22,7 @@ g:tmc_cli_version	tmc.txt	/*g:tmc_cli_version*
 g:tmc_client_name	tmc.txt	/*g:tmc_client_name*
 g:tmc_client_version	tmc.txt	/*g:tmc_client_version*
 g:tmc_disable_default_mappings	tmc.txt	/*g:tmc_disable_default_mappings*
+g:tmc_notify_always	tmc.txt	/*g:tmc_notify_always*
 g:tmc_organization	tmc.txt	/*g:tmc_organization*
 tmc	tmc.txt	/*tmc*
 tmc-api	tmc.txt	/*tmc-api*

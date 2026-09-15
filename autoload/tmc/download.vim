@@ -1,207 +1,174 @@
 scriptencoding utf-8
 
 " autoload/tmc/download.vim
-"
-" Handles downloading of course exercises asynchronously with
-" pretty-printing, progress logs, and summary.
+" Downloads a course's exercises into a floating panel, with progress and a
+" per-exercise summary.
 
 if exists('g:autoloaded_tmc_download')
   finish
 endif
 let g:autoloaded_tmc_download = 1
 
-let s:last_result = {}
+let s:KIND = 'download'
+
+" Callbacks to run once the download finishes, keyed by nothing in particular:
+" only one download runs at a time.
+let s:done_cb = 0
 
 " ================================
 " Public: Download all exercises
 " ================================
-
 function! tmc#download#course_exercises(course_id, org, cb) abort
   let l:cli = tmc#cli#ensure()
+
   if empty(a:course_id)
     call tmc#util#echo_error('No course ID provided')
     call a:cb('')
     return
   endif
 
+  if tmc#job#is_running(s:KIND)
+    call tmc#util#echo_warning('A TMC download is already in progress')
+    call tmc#panel#show(s:KIND)
+    return
+  endif
+
   " Get all exercises and count locked vs available
   let l:all_exercises = tmc#exercise#get_list(a:course_id)
   let l:total_count = len(l:all_exercises)
-  
+
   " Get only available (unlocked) exercises to avoid 403 Forbidden errors
   let l:exercise_ids = tmc#exercise#get_available_ids(a:course_id)
   let l:available_count = len(l:exercise_ids)
   let l:locked_count = l:total_count - l:available_count
-  
+
   if empty(l:exercise_ids)
-    call tmc#util#echo_info('No available exercises to download for course ' . a:course_id . ' (all ' . l:total_count . ' are locked)')
+    call tmc#util#echo_info('No available exercises to download for course ' . a:course_id
+          \ . ' (all ' . l:total_count . ' are locked)')
     call a:cb('')
     return
   endif
 
-  " Show info about locked exercises
   if l:locked_count > 0
-    call tmc#util#echo_info('Downloading ' . l:available_count . ' available exercises (skipping ' . l:locked_count . ' locked)')
+    call tmc#util#echo_info('Downloading ' . l:available_count
+          \ . ' available exercises (skipping ' . l:locked_count . ' locked)')
   else
     call tmc#util#echo_info('Downloading all ' . l:available_count . ' exercises')
   endif
 
-  " Initialize logs
-  let g:tmc_download_logs = []
+  call tmc#panel#open(s:KIND, 'Download · course ' . a:course_id)
+  call tmc#panel#reset(s:KIND)
+  call tmc#progress#start(s:KIND, printf('Downloading %d exercises…', l:available_count))
 
-  " Open scratch buffer
-  tabnew
-  setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted
-  file tmc-download
-  setlocal syntax=tmcresult
-  let g:tmc_download_buf = bufnr('%')
-
-  " Build CLI command
   let l:args = [l:cli, 'tmc',
         \ '--client-name', g:tmc_client_name,
         \ '--client-version', g:tmc_client_version,
         \ 'download-or-update-course-exercises']
-  for id in l:exercise_ids
-    call extend(l:args, ['--exercise-id', id])
+  for l:id in l:exercise_ids
+    call extend(l:args, ['--exercise-id', l:id])
   endfor
 
-  " Start spinner
-  call tmc#spinner#start(g:tmc_download_buf, 'Downloading exercises...')
-
-  if exists('*jobstart') " Neovim
-    call jobstart(l:args, {
-          \ 'stdout_buffered': v:false,
-          \ 'on_stdout': function('s:Download_on_stdout_nvim'),
-          \ 'on_exit':   {j, code, e -> s:Download_on_exit(j, code, e, a:course_id, a:cb)},
-          \ 'stderr':    'ignore',
-          \ })
-  elseif exists('*job_start') " Vim8
-    call job_start(l:args, {
-          \ 'out_cb': function('s:Download_on_stdout_vim'),
-          \ 'exit_cb': {ch, code -> s:Download_on_exit(ch, code, '', a:course_id, a:cb)},
-          \ })
-  else
-    call s:download_fallback(l:args, a:course_id, a:cb)
-  endif
+  let s:done_cb = a:cb
+  call tmc#job#start(s:KIND, l:args, {
+        \ 'meta': {'course_id': a:course_id, 'org': a:org, 'expected': l:available_count},
+        \ 'on_line': function('s:on_line'),
+        \ 'on_exit': function('s:on_exit'),
+        \ })
 endfunction
 
 " ================================
-" Output handlers
+" Streaming output
 " ================================
-
-function! s:Download_on_stdout_nvim(job_id, data, event) abort
-  for line in a:data
-    if empty(line) | continue | endif
-    try
-      let obj = json_decode(line)
-    catch
-      continue
-    endtry
-
-    if get(obj, 'output-kind', '') ==# 'status-update' && has_key(obj, 'message')
-      call add(g:tmc_download_logs, '⏳ ' . obj['message'])
-      if exists('g:tmc_download_buf') && bufloaded(g:tmc_download_buf)
-        call appendbufline(g:tmc_download_buf, '$', '⏳ ' . obj['message'])
-        normal! G
-      endif
-    elseif get(obj, 'output-kind', '') ==# 'output-data'
-      let s:last_result = obj
-    endif
-  endfor
-endfunction
-
-function! s:Download_on_stdout_vim(channel, msg) abort
-  call s:Download_on_stdout_nvim(0, split(a:msg, "\n"), '')
-endfunction
-
-" ================================
-" Exit handlers
-" ================================
-
-function! s:Download_on_exit(job_id, code, event, course_id, cb) abort
-  call tmc#spinner#stop()
-  call s:print_summary(a:course_id)
-  call a:cb(a:course_id)
-endfunction
-
-function! s:download_fallback(args, course_id, cb) abort
-  let l:objs = tmc#cli#run_streaming(a:args)
-  for obj in l:objs
-    if get(obj, 'output-kind', '') ==# 'output-data'
-      let s:last_result = obj
-    endif
-  endfor
-  call s:print_summary(a:course_id)
-  call a:cb(a:course_id)
-endfunction
-
-" ================================
-" Print results summary
-" ================================
-
-function! s:print_summary(course_id) abort
-  if !exists('g:tmc_download_buf') || !bufloaded(g:tmc_download_buf)
+function! s:on_line(kind, line) abort
+  try
+    let l:obj = json_decode(a:line)
+  catch
     return
-  endif
+  endtry
 
-  let downloaded_count = 0
-  let skipped_count = 0
-  let failed_count = 0
-  let failed_due_to_permission = 0
-
-  call appendbufline(g:tmc_download_buf, '$', '✅ Download completed successfully')
-
-  if !empty(s:last_result)
-    let obj = s:last_result
-    if has_key(obj, 'data') && has_key(obj['data'], 'output-data')
-      let data = obj['data']['output-data']
-
-      " Downloaded
-      if has_key(data, 'downloaded')
-        let downloaded_count = len(data['downloaded'])
-        call appendbufline(g:tmc_download_buf, '$', '--- Downloaded ---')
-        for item in data['downloaded']
-          call appendbufline(g:tmc_download_buf, '$', '  ✅ ' . item['exercise-slug'])
-        endfor
-      endif
-
-      " Skipped
-      if has_key(data, 'skipped') && !empty(data['skipped'])
-        let skipped_count = len(data['skipped'])
-        call appendbufline(g:tmc_download_buf, '$', '--- Skipped ---')
-        for item in data['skipped']
-          call appendbufline(g:tmc_download_buf, '$', '  ⚠️  ' . item['exercise-slug'])
-        endfor
-      endif
-
-      " Failed
-      if has_key(data, 'failed') && !empty(data['failed'])
-        let failed_count = len(data['failed'])
-        call appendbufline(g:tmc_download_buf, '$', '--- Failed ---')
-        for failure in data['failed']
-          let ex_info = failure[0]
-          let reason  = join(failure[1], ' ')
-          if reason =~? '403 Forbidden'
-            let failed_due_to_permission += 1
-          endif
-          call appendbufline(g:tmc_download_buf, '$', '  ❌ ' . ex_info['exercise-slug'] . ': ' . reason)
-        endfor
-      endif
+  let l:okind = get(l:obj, 'output-kind', '')
+  if l:okind ==# 'status-update'
+    let l:msg = get(l:obj, 'message', '')
+    call tmc#progress#update(a:kind, tmc#progress#percent_of(l:obj), l:msg)
+    if !empty(l:msg)
+      call tmc#panel#append(a:kind, '⏳ ' . l:msg)
     endif
-    let s:last_result = {}
+  elseif l:okind ==# 'output-data'
+    call tmc#job#set_result(a:kind, l:obj)
+  endif
+endfunction
+
+" ================================
+" Completion
+" ================================
+function! s:on_exit(kind, code) abort
+  let l:meta = tmc#job#meta(a:kind)
+  let l:summary = s:print_summary(a:kind)
+
+  call tmc#progress#finish(a:kind, l:summary)
+  call tmc#notify#result(a:kind, l:summary =~# '^✅', l:summary)
+
+  " Hand control back to the picker flow (cd into the course, list exercises).
+  let l:cb = s:done_cb
+  let s:done_cb = 0
+  if type(l:cb) == v:t_func
+    call call(l:cb, [get(l:meta, 'course_id', '')])
+  endif
+endfunction
+
+function! s:print_summary(kind) abort
+  let l:downloaded = 0
+  let l:skipped = 0
+  let l:failed = 0
+  let l:perm_failures = 0
+
+  let l:res = tmc#job#result(a:kind)
+  let l:data = {}
+  if type(l:res) == type({}) && has_key(l:res, 'data') && type(l:res['data']) == type({})
+    let l:data = get(l:res['data'], 'output-data', {})
   endif
 
-  " Summary
-  call appendbufline(g:tmc_download_buf, '$', '--- Summary ---')
-  call appendbufline(g:tmc_download_buf, '$',
-        \ printf('✅ %d downloaded, ⚠️  %d skipped, ❌ %d failed',
-        \ downloaded_count, skipped_count, failed_count))
+  if type(l:data) == type({}) && !empty(l:data)
+    if has_key(l:data, 'downloaded')
+      let l:downloaded = len(l:data['downloaded'])
+      call tmc#panel#append(a:kind, ['', '--- Downloaded ---'])
+      for l:item in l:data['downloaded']
+        call tmc#panel#append(a:kind, '  ✅ ' . get(l:item, 'exercise-slug', '?'))
+      endfor
+    endif
 
-  if failed_due_to_permission > 0
-    call appendbufline(g:tmc_download_buf, '$',
+    if has_key(l:data, 'skipped') && !empty(l:data['skipped'])
+      let l:skipped = len(l:data['skipped'])
+      call tmc#panel#append(a:kind, ['', '--- Skipped ---'])
+      for l:item in l:data['skipped']
+        call tmc#panel#append(a:kind, '  ⚠️  ' . get(l:item, 'exercise-slug', '?'))
+      endfor
+    endif
+
+    if has_key(l:data, 'failed') && !empty(l:data['failed'])
+      let l:failed = len(l:data['failed'])
+      call tmc#panel#append(a:kind, ['', '--- Failed ---'])
+      for l:failure in l:data['failed']
+        let l:info = l:failure[0]
+        let l:reason = join(l:failure[1], ' ')
+        if l:reason =~? '403 Forbidden'
+          let l:perm_failures += 1
+        endif
+        call tmc#panel#append(a:kind,
+              \ '  ❌ ' . get(l:info, 'exercise-slug', '?') . ': ' . l:reason)
+      endfor
+    endif
+  endif
+
+  let l:summary = printf('%s %d downloaded, %d skipped, %d failed',
+        \ l:failed == 0 ? '✅' : '❌', l:downloaded, l:skipped, l:failed)
+
+  call tmc#panel#append(a:kind, ['', '--- Summary ---', l:summary])
+
+  if l:perm_failures > 0
+    call tmc#panel#append(a:kind,
           \ '💡 Note: Some failures may be due to exercises requiring you to submit previous ones first.')
   endif
 
-  execute 'normal! G'
+  return l:summary
 endfunction
-

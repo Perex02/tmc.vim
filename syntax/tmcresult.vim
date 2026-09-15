@@ -33,5 +33,23 @@ highlight def link TmcHeader Title
 syntax match TmcLog /^\s\+\(Stdout\|Stderr\):/
 highlight def link TmcLog Comment
 
+" Progress bar: filled / empty track, and the percentage beside it
+syntax match TmcBarFill /█\+/
+highlight def link TmcBarFill Statement
+
+syntax match TmcBarEmpty /░\+/
+highlight def link TmcBarEmpty NonText
+
+syntax match TmcPercent /\d\{1,3}%$/
+highlight def link TmcPercent Number
+
+" [Submit (s)] action button
+syntax match TmcButton /^\[Submit (s)\]$/
+highlight def link TmcButton DiffText
+
+" Raw CLI passthrough lines
+syntax match TmcInfo /^ℹ.*$/
+highlight def link TmcInfo Comment
+
 let b:current_syntax = "tmcresult"
 

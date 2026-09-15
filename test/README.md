@@ -13,9 +13,27 @@ test/
 │   ├── test_project.vader
 │   ├── test_course.vader
 │   └── test_exercise.vader
-└── integration/                # Integration and compatibility tests
-    ├── test_vim_neovim_compat.vader
-    └── test_workflow.vader
+├── integration/                # Integration and compatibility tests
+│   ├── test_vim_neovim_compat.vader
+│   └── test_workflow.vader
+└── nvim/                       # Driven Neovim scripts (not Vader)
+    └── panel_spec.vim          # Floating panel, progress bar, notifications
+```
+
+### Why `nvim/panel_spec.vim` is not a Vader test
+
+The panel layer needs real timers and a real background job: the assertions
+cover a job that keeps running after its window is closed, output accruing into
+a hidden buffer, and a notification firing on completion. Vader's synchronous
+`Execute` blocks cannot express that, and the Vader suite additionally hangs
+under headless Neovim 0.12. It is a plain driven script that `cquit 1`s on
+failure, so CI can gate on it:
+
+```bash
+nvim --headless -u NONE \
+  -c 'set runtimepath+=.' \
+  -c 'runtime plugin/tmc.vim' \
+  -S test/nvim/panel_spec.vim -c 'qa!'
 ```
 
 ## Prerequisites

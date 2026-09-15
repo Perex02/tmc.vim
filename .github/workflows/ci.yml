@@ -14,24 +14,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Vim versions
-          - os: ubuntu-latest
-            editor: vim-8.2
-            version: v8.2.0000
-            neovim: false
-          - os: ubuntu-latest
-            editor: vim-9.0
-            version: v9.0.0000
-            neovim: false
-          - os: macos-latest
-            editor: vim-9.0
-            version: v9.0.0000
-            neovim: false
-          # Neovim versions
-          - os: ubuntu-latest
-            editor: neovim-0.5
-            version: v0.5.0
-            neovim: true
+          # Neovim only: the plugin uses nvim_open_win, jobstart and
+          # vim.notify, and no longer carries Vim fallbacks.
           - os: ubuntu-latest
             editor: neovim-0.9
             version: v0.9.0
@@ -76,6 +60,13 @@ jobs:
               -c "runtime plugin/tmc.vim" \
               -c "if exists(':TmcRunTests') | echo 'Plugin loaded successfully' | qall! | else | echo 'Plugin failed to load' | cquit | endif"
           fi
+
+      - name: Panel / progress / notification spec
+        run: |
+          nvim --headless -u NONE \
+            -c 'set runtimepath+=.' \
+            -c 'runtime plugin/tmc.vim' \
+            -S test/nvim/panel_spec.vim -c 'qa!'
 
       - name: Install Vader.vim
         run: |

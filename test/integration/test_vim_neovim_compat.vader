@@ -1,5 +1,7 @@
 " test/integration/test_vim_neovim_compat.vader
-" Tests for Vim and Neovim compatibility
+" Smoke tests: every autoload module loads and the whole command/mapping
+" surface is defined. Neovim only -- the plugin no longer carries Vim
+" fallbacks for jobs or windows.
 
 Before:
   source test/helpers.vim
@@ -23,7 +25,11 @@ Execute (All autoload modules should load without errors):
   runtime autoload/tmc/download.vim
   runtime autoload/tmc/paste.vim
   runtime autoload/tmc/spinner.vim
-  
+  runtime autoload/tmc/panel.vim
+  runtime autoload/tmc/progress.vim
+  runtime autoload/tmc/job.vim
+  runtime autoload/tmc/notify.vim
+
   Assert 1, 'All modules loaded successfully'
 
 Execute (Plugin commands should be defined):
@@ -42,6 +48,7 @@ Execute (Plugin commands should be defined):
   Assert exists(':TmcCdCourse'), 'TmcCdCourse command should exist'
   Assert exists(':TmcPaste'), 'TmcPaste command should exist'
   Assert exists(':TmcProjectsDir'), 'TmcProjectsDir command should exist'
+  Assert exists(':TmcPanel'), 'TmcPanel command should exist'
   Assert exists(':TmcCourses'), 'TmcCourses alias command should exist'
   Assert exists(':TmcExercises'), 'TmcExercises alias command should exist'
   Assert exists(':TmcPickOrg'), 'TmcPickOrg alias command should exist'
@@ -51,6 +58,7 @@ Execute (Plug mappings should be defined):
   
   Assert hasmapto('<Plug>(tmc-run-tests)'), 'tmc-run-tests mapping should exist'
   Assert hasmapto('<Plug>(tmc-submit-current)'), 'tmc-submit-current mapping should exist'
+  Assert hasmapto('<Plug>(tmc-toggle-panel)'), 'tmc-toggle-panel mapping should exist'
 
 Execute (Default mappings should work when not disabled):
   let g:tmc_disable_default_mappings = 0

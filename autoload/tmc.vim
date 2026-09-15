@@ -86,3 +86,14 @@ endfunction
 function! tmc#projects_dir() abort
   return tmc#project#get_dir()
 endfunction
+
+" Panels
+" :TmcPanel with no argument targets the panel most recently opened.
+function! tmc#toggle_panel(...) abort
+  let l:kind = a:0 >= 1 && !empty(a:1) ? a:1 : tmc#panel#last_kind()
+  if empty(l:kind)
+    call tmc#util#echo_info('No TMC panel yet - run :TmcRunTests or :TmcSubmit first')
+    return
+  endif
+  return tmc#panel#toggle(l:kind)
+endfunction

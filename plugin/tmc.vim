@@ -48,6 +48,10 @@ command! TmcPaste call tmc#paste_current()
 " Inspect resolved projects directory (for debugging)
 command! TmcProjectsDir echo tmc#projects_dir()
 
+" Show / minimize the result panels
+command! -nargs=? -complete=customlist,tmc#panel#complete TmcPanel
+      \ call tmc#toggle_panel(<f-args>)
+
 " --- Aliases that match README / common naming ---
 command! -nargs=0 TmcCourses     call tmc#list_courses()
 command! -nargs=1 TmcExercises   call tmc#list_exercises(<f-args>)
@@ -59,10 +63,12 @@ command! -nargs=0 TmcPickOrg     call tmc#pick_organization_command()
 " Provide <Plug> targets so users can remap cleanly
 nnoremap <silent> <Plug>(tmc-run-tests)        :TmcRunTests<CR>
 nnoremap <silent> <Plug>(tmc-submit-current)   :TmcSubmit<CR>
+nnoremap <silent> <Plug>(tmc-toggle-panel)     :TmcPanel<CR>
 
 " Default leader mappings (can be disabled)
 if !get(g:, 'tmc_disable_default_mappings', 0)
   nmap <silent> <leader>tt <Plug>(tmc-run-tests)
   nmap <silent> <leader>ts <Plug>(tmc-submit-current)
+  nmap <silent> <leader>tw <Plug>(tmc-toggle-panel)
 endif
 

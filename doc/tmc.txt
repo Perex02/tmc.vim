@@ -1,5 +1,5 @@
 
-*tmc.txt*   Test-My-Code integration for Vim/Neovim
+*tmc.txt*   Test-My-Code integration for Neovim
 
 =============================================================================
 INTRODUCTION                                           *tmc* *tmc-overview*
@@ -14,9 +14,12 @@ INTRODUCTION                                           *tmc* *tmc-overview*
   - Local test execution
   - Exercise submission and feedback
 
-  The plugin works with both Vim 8.2+ and Neovim 0.5+, and supports
-  multiple UI backends including Telescope (Neovim), fzf.vim, and
-  native vim popups.
+  Requires Neovim 0.9+. Results appear in a floating panel that can be
+  minimized with 'q' while the job keeps running in the background, and
+  finished background runs report via |vim.notify|.
+
+  Course and organization pickers use Telescope when available, then
+  vim.ui.select, then fzf.vim.
 
 =============================================================================
 CONTENTS                                                   *tmc-contents*
@@ -128,19 +131,31 @@ Exercise Management ~
 
   :TmcRunTests                                            *:TmcRunTests*
       Runs tests for the exercise containing the current buffer.
-      Opens a scratch buffer showing test results with syntax highlighting.
+      Opens a floating panel with a progress bar and the test results.
       Automatically detects the exercise root by finding .tmcproject.yml
+
+      Press 'q' to minimize the panel; the run continues in the
+      background and notifies you when it finishes. When every test
+      passes the panel offers a [Submit (s)] action.
 
   :TmcSubmit                                                *:TmcSubmit*
   :TmcSubmitCurrent                                  *:TmcSubmitCurrent*
       Submits the exercise containing the current buffer.
       Exercise ID is automatically determined from course_config.toml
-      Shows submission results in a scratch buffer.
+      Shows submission results in a floating panel, with the same
+      minimize-and-notify behaviour as :TmcRunTests.
 
   :TmcPaste                                                  *:TmcPaste*
       Creates a paste of the current exercise for code review/sharing.
 
 Utilities ~
+  :TmcPanel [kind]                                          *:TmcPanel*
+      Shows or minimizes a result panel. <kind> is one of 'test',
+      'submit', 'download' or 'paste'; with no argument the most
+      recently opened panel is toggled.
+
+      Minimizing never stops the underlying job.
+
   :TmcProjectsDir                                        *:TmcProjectsDir*
       Displays the TMC projects directory path.
 
@@ -182,6 +197,14 @@ g:tmc_organization                                   *g:tmc_organization*
         let g:tmc_organization = 'hy'
 <
 
+g:tmc_notify_always                                 *g:tmc_notify_always*
+      Notify on every finished run, not just those that finished while
+      their panel was minimized.
+      Default: 0
+
+      By default a run that completes while you are looking at its panel
+      does not also raise a notification.
+
 g:tmc_disable_default_mappings           *g:tmc_disable_default_mappings*
       Disable default <leader> mappings when non-zero.
       Default: 0
@@ -204,6 +227,12 @@ DEFAULT MAPPINGS                                           *tmc-mappings*
 In normal mode:
   <leader>tt     → :TmcRunTests       Run tests for current exercise
   <leader>ts     → :TmcSubmit         Submit current exercise
+  <leader>tw     → :TmcPanel          Show/minimize the last result panel
+
+Inside a result panel:
+  q              Minimize the panel; the job keeps running
+  <C-c>          Cancel the running job
+  s              Submit to the server (only after a passing local run)
 
 These mappings can be disabled by setting: >
   let g:tmc_disable_default_mappings = 1
@@ -217,6 +246,7 @@ You can create custom mappings using <Plug> targets: >
 Available <Plug> targets:
   <Plug>(tmc-run-tests)               Run tests
   <Plug>(tmc-submit-current)          Submit exercise
+  <Plug>(tmc-toggle-panel)            Show/minimize the last result panel
 
 =============================================================================
 WORKFLOW                                                   *tmc-workflow*

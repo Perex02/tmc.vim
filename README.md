@@ -3,8 +3,10 @@
 [![CI](https://github.com/ukonhattu/tmc.vim/workflows/CI/badge.svg)](https://github.com/ukonhattu/tmc.vim/actions)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-A Vim/Neovim plugin that integrates [tmc-langs-cli](https://github.com/rage/tmc-langs-rust/tree/main/crates/tmc-langs-cli) 
+A Neovim plugin that integrates [tmc-langs-cli](https://github.com/rage/tmc-langs-rust/tree/main/crates/tmc-langs-cli)
 for working with Test-My-Code exercises directly from your editor.
+
+Requires Neovim 0.9+.
 
 ## Features
 
@@ -13,8 +15,12 @@ for working with Test-My-Code exercises directly from your editor.
 - Automatic exercise download and updates
 - Local test execution with formatted results
 - Exercise submission with instant feedback
-- Vim 8.2+ and Neovim 0.5+ support
-- Multiple UI backends (Telescope, fzf.vim, native popups)
+- Results in a floating panel you can minimize with `q` while the run
+  continues in the background
+- `vim.notify` when a backgrounded run finishes
+- One-key `[Submit (s)]` straight from a passing local run
+- Progress bar with the current task, driven by the CLI's own progress reports
+- Multiple picker backends (Telescope, `vim.ui.select`, fzf.vim)
 - Automatic CLI binary download with SHA-256 verification
 
 ## Quick Start
@@ -23,7 +29,10 @@ for working with Test-My-Code exercises directly from your editor.
 2. Login to TMC: `:TmcLogin your@email.com`
 3. Select a course: `:TmcPickCourse`
 4. Navigate to an exercise and run tests: `<leader>tt` or `:TmcRunTests`
-5. Submit your solution: `<leader>ts` or `:TmcSubmit`
+5. When they pass, hit `s` in the panel — or `<leader>ts` / `:TmcSubmit`
+
+While a run is going, `q` minimizes the panel and the job keeps going;
+`<leader>tw` brings it back, and you get a notification when it finishes.
 
 See the [Commands](#commands) section for detailed usage.
 
@@ -78,6 +87,7 @@ See the [Commands](#commands) section for detailed usage.
 | `:TmcPickCourse` | Opens a menu to select a course.  Once a course is selected, its exercises are downloaded automatically and then changes working directory to the course's directory. Run this too if you want to update the exercises or download new ones. (Will add command for those later).  |
 |`:TmcPickOrg` | Opens a popup menu to select an organisation.
 |`:TmcCdCourse`| Change Vim's current working directory to the last picked course
+| `:TmcPanel [kind]` | Show or minimize a result panel (`test`, `submit`, `download`, `paste`; defaults to the most recent). Minimizing never stops the job. |
 | `:Tmc <subcommand> [args...]` | Runs an arbitrary `tmc-langs-cli` command. If running  `tmc` or `mooc` subcommand, --client-name and --client-version are automatically added to the command. Mooc command has not been tested yet.|
 
 ## Configuration
@@ -89,7 +99,8 @@ See the [Commands](#commands) section for detailed usage.
 | `g:tmc_cli_path` | auto-download | Path to tmc-langs-cli binary. Set to override automatic download. |
 | `g:tmc_cli_version` | `'0.38.1'` | Version to download automatically if binary not found. |
 | `g:tmc_organization` | `'mooc'` | Default organization slug for course listings. |
-| `g:tmc_disable_default_mappings` | `0` | Set to `1` to disable default `<leader>tt` and `<leader>ts` mappings. |
+| `g:tmc_notify_always` | `0` | Notify on every finished run, not only those that finished while minimized. |
+| `g:tmc_disable_default_mappings` | `0` | Set to `1` to disable the default `<leader>tt`, `<leader>ts` and `<leader>tw` mappings. |
 
 ### Environment Variables
 
@@ -110,7 +121,16 @@ let g:tmc_organization = 'hy'
 let g:tmc_disable_default_mappings = 1
 nmap <F5> <Plug>(tmc-run-tests)
 nmap <F6> <Plug>(tmc-submit-current)
+nmap <F7> <Plug>(tmc-toggle-panel)
 ```
+
+### Panel keys
+
+| Key | Action |
+|-----|--------|
+| `q` | Minimize the panel; the job keeps running in the background |
+| `<C-c>` | Cancel the running job |
+| `s` | Submit to the server — shown as `[Submit (s)]` after a passing local run |
 
 ## Notes
 
@@ -171,6 +191,10 @@ For information on contributing, code structure, and development setup, see [CON
 
 ```
 autoload/tmc/
+├── panel.vim         - Floating result panels (minimize / restore)
+├── progress.vim      - Progress bar + current task header
+├── job.vim           - Background CLI job registry
+├── notify.vim        - vim.notify reporting
 ├── util.vim          - Utility functions (messaging)
 ├── project.vim       - Project and exercise management
 ├── course.vim        - Course listing and data
@@ -183,6 +207,8 @@ autoload/tmc/
 ├── download.vim      - Exercise downloads
 └── ...
 ```
+
+> `spinner.vim` is retained only as deprecated shims over `progress.vim`.
 
 ## Contributing
 

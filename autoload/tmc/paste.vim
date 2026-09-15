@@ -1,15 +1,23 @@
 scriptencoding utf-8
 
+" autoload/tmc/paste.vim
+" Creates a TMC paste for the current exercise, reporting into a floating panel.
+
 if exists('g:loaded_tmc_paste')
   finish
 endif
 let g:loaded_tmc_paste = 1
 
-let s:last_result = {}
-let g:tmc_paste_buf = -1
+let s:KIND = 'paste'
 
 function! tmc#paste#current() abort
   call tmc#cli#ensure()
+
+  if tmc#job#is_running(s:KIND)
+    call tmc#util#echo_warning('A TMC paste is already in progress')
+    call tmc#panel#show(s:KIND)
+    return
+  endif
 
   let l:root = tmc#project#find_exercise_root()
   if empty(l:root)
@@ -26,17 +34,9 @@ function! tmc#paste#current() abort
     endif
   endif
 
-  let s:last_result = {}
-
-  " Open scratch buffer
-  tabnew
-  setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted
-  file tmc-paste
-  setlocal syntax=tmcresult
-  let g:tmc_paste_buf = bufnr('%')
-
-  " Spinner
-  call tmc#spinner#start(g:tmc_paste_buf, 'Creating paste...')
+  call tmc#panel#open(s:KIND, 'Paste · ' . fnamemodify(l:root, ':t'))
+  call tmc#panel#reset(s:KIND)
+  call tmc#progress#start(s:KIND, 'Creating paste…')
 
   let l:cmd = [g:tmc_cli_path, 'tmc',
         \ '--client-name', g:tmc_client_name,
@@ -45,120 +45,64 @@ function! tmc#paste#current() abort
         \ '--exercise-id', l:id,
         \ '--submission-path', l:root]
 
-  if exists('*jobstart')
-    call jobstart(l:cmd, {
-          \ 'pty': v:true,
-          \ 'stdout_buffered': v:false,
-          \ 'stderr_buffered': v:false,
-          \ 'on_stdout': function('s:on_stdout_nvim'),
-          \ 'on_stderr': function('s:on_stdout_nvim'),
-          \ 'on_exit':   {j, code, e -> s:on_exit(code)},
-          \ })
-  elseif exists('*job_start')
-    call job_start(l:cmd, {
-          \ 'out_cb': function('s:on_stdout_vim'),
-          \ 'err_cb': function('s:on_stdout_vim'),
-          \ 'exit_cb': {ch, code -> s:on_exit(code)},
-          \ })
-  else
-    call s:run_fallback(l:cmd)
-  endif
+  call tmc#job#start(s:KIND, l:cmd, {
+        \ 'pty': 1,
+        \ 'meta': {'root': l:root, 'exercise_id': l:id},
+        \ 'on_line': function('s:on_line'),
+        \ 'on_exit': function('s:on_exit'),
+        \ })
 endfunction
 
 " ===========================
-" Neovim stdout
+" Streaming output
 " ===========================
-function! s:on_stdout_nvim(job_id, data, event) abort
-  call s:handle_stdout(a:data)
-endfunction
-
-" ===========================
-" Vim8 stdout
-" ===========================
-function! s:on_stdout_vim(channel, msg) abort
-  if empty(a:msg) | return | endif
-  call s:handle_stdout(split(a:msg, "\n"))
-endfunction
-
-" ===========================
-" Shared stdout handler
-" ===========================
-function! s:handle_stdout(lines) abort
-  for line in a:lines
-    if empty(line) | continue | endif
-
-    try
-      let obj = json_decode(line)
-    catch
-      if bufloaded(g:tmc_paste_buf)
-        call appendbufline(g:tmc_paste_buf, '$', 'ℹ️ ' . line)
-        execute 'normal! G'
-      endif
-      continue
-    endtry
-
-    if get(obj, 'output-kind', '') ==# 'status-update'
-      if bufloaded(g:tmc_paste_buf)
-        call appendbufline(g:tmc_paste_buf, '$',
-              \ printf('⏳ %3.0f%% %s', obj['percent-done'] * 100, obj['message']))
-        execute 'normal! G'
-      endif
-      " Store paste URL if present
-      if has_key(obj, 'data') && type(obj['data']) == type({})
-        if has_key(obj['data'], 'paste_url')
-          let s:last_result['paste_url'] = obj['data']['paste_url']
-        endif
-      endif
-    elseif get(obj, 'output-kind', '') ==# 'output-data'
-      let s:last_result = obj['data']['output-data']
-    endif
-  endfor
-endfunction
-
-" ===========================
-" Exit handler
-" ===========================
-function! s:on_exit(code) abort
-  call tmc#spinner#stop()
-  call s:print_results()
-endfunction
-
-" ===========================
-" Fallback (sync)
-" ===========================
-function! s:run_fallback(cmd) abort
-  let l:objs = tmc#cli#run_streaming(a:cmd)
-  for obj in l:objs
-    if get(obj, 'output-kind', '') ==# 'output-data'
-      let s:last_result = obj['data']['output-data']
-    endif
-  endfor
-  call s:print_results()
-endfunction
-
-" ===========================
-" Print results
-" ===========================
-function! s:print_results() abort
-  if !bufloaded(g:tmc_paste_buf)
+function! s:on_line(kind, line) abort
+  try
+    let l:obj = json_decode(a:line)
+  catch
+    call tmc#panel#append(a:kind, 'ℹ️  ' . a:line)
     return
+  endtry
+
+  let l:okind = get(l:obj, 'output-kind', '')
+  if l:okind ==# 'status-update'
+    let l:msg = get(l:obj, 'message', '')
+    call tmc#progress#update(a:kind, tmc#progress#percent_of(l:obj), l:msg)
+    if !empty(l:msg)
+      call tmc#panel#append(a:kind, '⏳ ' . l:msg)
+    endif
+  elseif l:okind ==# 'output-data'
+    call tmc#job#set_result(a:kind, l:obj)
+  endif
+endfunction
+
+" ===========================
+" Completion
+" ===========================
+function! s:on_exit(kind, code) abort
+  let l:res = tmc#job#result(a:kind)
+  let l:dat = {}
+  if type(l:res) == type({}) && has_key(l:res, 'data') && type(l:res['data']) == type({})
+    let l:dat = get(l:res['data'], 'output-data', {})
+  endif
+  if type(l:dat) != type({})
+    let l:dat = {}
   endif
 
-  call appendbufline(g:tmc_paste_buf, '$', '--- Paste Completed ---')
+  call tmc#panel#append(a:kind, ['', '--- Paste Completed ---'])
 
-  if empty(s:last_result)
-    call appendbufline(g:tmc_paste_buf, '$', '❌ No paste result found')
+  let l:url = get(l:dat, 'paste_url', '')
+  if empty(l:url)
+    let l:summary = '❌ No paste URL in response'
+    call tmc#panel#append(a:kind, l:summary)
   else
-    if has_key(s:last_result, 'paste_url')
-      call appendbufline(g:tmc_paste_buf, '$', '🔗 Paste URL: ' . s:last_result['paste_url'])
-    else
-      call appendbufline(g:tmc_paste_buf, '$', '❌ No paste URL in response')
-    endif
-
-    if has_key(s:last_result, 'show_submission_url')
-      call appendbufline(g:tmc_paste_buf, '$', '🔗 Submission URL: ' . s:last_result['show_submission_url'])
+    let l:summary = '🔗 Paste URL: ' . l:url
+    call tmc#panel#append(a:kind, l:summary)
+    if has_key(l:dat, 'show_submission_url')
+      call tmc#panel#append(a:kind, '🔗 Submission URL: ' . l:dat['show_submission_url'])
     endif
   endif
 
-  execute 'normal! G'
+  call tmc#progress#finish(a:kind, empty(l:url) ? '❌ Paste failed' : '✅ Paste created')
+  call tmc#notify#result(a:kind, !empty(l:url), l:summary)
 endfunction
